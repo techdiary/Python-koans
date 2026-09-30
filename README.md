@@ -24,7 +24,7 @@ If pip installs the command outside your `PATH`, run the path it prints, or `pyt
 
 `python-koans list` prints every topic in path order, one row each. A tick means that lesson is finished. A cross means it is not. A lesson is finished when no fill-in `__` remains (`__eq__` and similar names are not blanks). `about_transfer` also needs `koans/student_work.py` implemented: `NotImplementedError` or a body that is only `pass` is not finished.
 
-The report is drawn with Cleo: a loader while the lessons load, the current lesson, then the current koan, then the file and line, the assertion message, and how many koans passed. Color is on in a terminal and off when stdout is a pipe.
+The report is drawn with Cleo: a loader while the lessons load, then the lesson and the koan. A stop says why the path stopped and what to do next. An unfilled `__` is the next koan, not a crash: the report names the file, line, and test, and tells you to replace `__` with the value you predict. If `because(__)` on that test is still blank, it asks for one sentence naming the mechanism, and prints the hint when the test has one. A `because()` that misses the mechanism says so and prints the hint, not the required words. A prediction that fails says it did not match. The report does not print the answer. Color is on in a terminal and plain text when stdout is not a terminal. The last line is how many koans passed.
 
 There is no answer key.
 

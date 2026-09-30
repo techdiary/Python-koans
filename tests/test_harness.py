@@ -110,7 +110,9 @@ class HarnessTests(unittest.TestCase):
         text = stream.getvalue()
         self.assertEqual(code, 1)
         self.assertEqual(steps, ["zebra"])
-        self.assertIn("alpha-stop", text)
+        self.assertIn("The prediction did not match.", text)
+        self.assertIn("Change that blank, save, and run `python-koans start` again.", text)
+        self.assertNotIn("alpha-stop", text)
         self.assertNotIn("should-not-run", text)
         self.assertIn("Passed 0 of 2.", text)
         self.assertRegex(text, r"tests/test_harness\.py:\d+")
@@ -134,9 +136,83 @@ class HarnessTests(unittest.TestCase):
         text = stream.getvalue()
         self.assertEqual(code, 1)
         self.assertEqual(steps, ["ok", "bad"])
-        self.assertIn("stopped-here", text)
+        self.assertIn("The prediction did not match.", text)
+        self.assertNotIn("stopped-here", text)
         self.assertNotIn("not-reached", text)
         self.assertIn("Passed 1 of 3.", text)
+
+    def test_unfilled_blank_report_names_the_file_and_the_next_action(self):
+        secret = "expected-answer-9f3c"
+
+        class NextKoan(Koan):
+            @expects("rebind", hint="Say what the assertion compares.")
+            def test_predict_the_sum(self):
+                self.assertEqual(secret, blank)
+                self.because(blank)
+
+        stream = io.StringIO()
+        code = run_suite(suite_from_classes([NextKoan]), stream)
+        text = stream.getvalue()
+        self.assertEqual(code, 1)
+        self.assertRegex(text, r"tests/test_harness\.py:\d+")
+        self.assertIn("test_predict_the_sum", text)
+        self.assertIn("not a crash", text)
+        self.assertIn("Replace `__` with the value you predict.", text)
+        self.assertIn("Replace `because(__)` with one sentence naming the mechanism.", text)
+        self.assertIn("Say what the assertion compares.", text)
+        self.assertIn("Save the file, then run `python-koans start` again.", text)
+        self.assertNotIn(secret, text)
+        self.assertNotIn("rebind", text)
+        self.assertNotIn("\x1b", text)
+
+    def test_because_stop_prints_the_hint_and_not_the_stems(self):
+        class Missing(Koan):
+            @expects("rebind", hint="Say what the second assignment does to the name.")
+            def test_sentence(self):
+                self.assertEqual(1, 1)
+                self.because(blank)
+
+        class Rejected(Koan):
+            @expects(
+                "alias",
+                hint="Say whether the two names refer to one object.",
+            )
+            def test_sentence(self):
+                self.assertEqual(1, 1)
+                self.because("they look the same")
+
+        missing = io.StringIO()
+        self.assertEqual(run_suite(suite_from_classes([Missing]), missing), 1)
+        missing_text = missing.getvalue()
+        self.assertIn("does not name the mechanism", missing_text)
+        self.assertIn("Say what the second assignment does to the name.", missing_text)
+        self.assertIn("Save the file, then run `python-koans start` again.", missing_text)
+        self.assertNotIn("rebind", missing_text)
+
+        rejected = io.StringIO()
+        self.assertEqual(run_suite(suite_from_classes([Rejected]), rejected), 1)
+        rejected_text = rejected.getvalue()
+        self.assertIn("does not name the mechanism", rejected_text)
+        self.assertIn("Say whether the two names refer to one object.", rejected_text)
+        self.assertNotIn("alias", rejected_text)
+        self.assertNotIn("they look the same", rejected_text)
+
+    def test_wrong_prediction_does_not_print_the_expected_value(self):
+        secret = "expected-answer-9f3c"
+
+        class Wrong(Koan):
+            def test_guess(self):
+                self.assertEqual(secret, "student-guess")
+
+        stream = io.StringIO()
+        code = run_suite(suite_from_classes([Wrong]), stream)
+        text = stream.getvalue()
+        self.assertEqual(code, 1)
+        self.assertIn("The prediction did not match.", text)
+        self.assertRegex(text, r"tests/test_harness\.py:\d+")
+        self.assertIn("Change that blank, save, and run `python-koans start` again.", text)
+        self.assertNotIn(secret, text)
+        self.assertNotIn("student-guess", text)
 
     def test_the_path_stops_on_the_first_unfilled_blank(self):
         completed = subprocess.run(
