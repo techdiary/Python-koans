@@ -10,7 +10,6 @@ import sys
 import textwrap
 import traceback
 import unittest
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NoReturn
 
@@ -43,12 +42,10 @@ def suite_from_classes(classes: list[type[Koan]]) -> unittest.TestSuite:
     return suite
 
 
-def load_suite(module_names: list[str], *, reload_modules: bool = False) -> unittest.TestSuite:
+def load_suite(module_names: list[str]) -> unittest.TestSuite:
     classes: list[type[Koan]] = []
     for module_name in module_names:
         module = importlib.import_module(module_name)
-        if reload_modules:
-            module = importlib.reload(module)
         found = [
             obj
             for _, obj in inspect.getmembers(module, inspect.isclass)
@@ -219,24 +216,6 @@ def lesson_of(test: unittest.TestCase) -> str:
     return Path(inspect.getfile(type(test))).stem
 
 
-def source_path(test: unittest.TestCase) -> Path:
-    return Path(inspect.getfile(type(test)))
-
-
-def failing_lineno(test: unittest.TestCase, err: tuple) -> int | None:
-    _path, separator, line = location_of(test, err).rpartition(":")
-    if separator and line.isdigit():
-        return int(line)
-    return None
-
-
-@dataclass
-class JourneyStop:
-    code: int
-    test: unittest.TestCase | None = None
-    err: tuple | None = None
-
-
 def open_output(stream) -> StreamOutput:
     """Color follows the stream. A pipe or capture is plain text."""
     return StreamOutput(stream)
@@ -280,14 +259,6 @@ class StopResult(unittest.TestResult):
 
 
 def run_suite(suite: unittest.TestSuite, stream=None, output: StreamOutput | None = None) -> int:
-    return _run_loaded(suite, stream, output).code
-
-
-def _run_loaded(
-    suite: unittest.TestSuite,
-    stream=None,
-    output: StreamOutput | None = None,
-) -> JourneyStop:
     if stream is None:
         stream = sys.stdout
     if output is None:
@@ -299,19 +270,12 @@ def _run_loaded(
     suite.run(result)
     passed = result.testsRun - len(result.failures) - len(result.errors)
     output.write_line(f"Passed {passed} of {total}.")
-    code = 0 if result.wasSuccessful() else 1
-    if result.first is None:
-        return JourneyStop(code)
-    test, err = result.first
-    return JourneyStop(code, test, err)
+    if result.wasSuccessful():
+        return 0
+    return 1
 
 
-def run_journey(
-    module_names: list[str],
-    stream=None,
-    *,
-    reload_modules: bool = False,
-) -> JourneyStop:
+def run_path(module_names: list[str], stream=None) -> int:
     if stream is None:
         stream = sys.stdout
     output = open_output(stream)
@@ -320,9 +284,5 @@ def run_journey(
         fmt=" {indicator} {message}" if output.is_decorated() else "{message}",
     )
     with indicator.auto("Loading lessons", "Lessons loaded."):
-        suite = load_suite(module_names, reload_modules=reload_modules)
-    return _run_loaded(suite, stream, output)
-
-
-def run_path(module_names: list[str], stream=None) -> int:
-    return run_journey(module_names, stream).code
+        suite = load_suite(module_names)
+    return run_suite(suite, stream, output=output)
