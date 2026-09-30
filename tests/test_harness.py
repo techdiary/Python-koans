@@ -19,6 +19,7 @@ from koans.progress import (
     student_work_is_implemented,
     write_lesson_list,
 )
+from koans.prompt import offer_fill
 from koans.runner import open_output, run_suite, suite_from_classes
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -369,6 +370,120 @@ class HarnessTests(unittest.TestCase):
             stem = name.rsplit(".", 1)[-1]
             self.assertIn(f"✗ {stem}", completed.stdout)
         self.assertNotIn("✓", completed.stdout)
+
+    def test_non_tty_start_does_not_prompt(self):
+        lesson = ROOT / "koans" / "about_asserts.py"
+        before = lesson.read_text(encoding="utf-8")
+        completed = subprocess.run(
+            [sys.executable, "-m", "koans", "start"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("fill in the blank", completed.stdout)
+        self.assertNotIn("Python expression:", completed.stdout)
+        self.assertNotIn("One sentence naming the mechanism:", completed.stdout)
+        self.assertEqual(completed.stderr, "")
+        self.assertEqual(lesson.read_text(encoding="utf-8"), before)
+
+    def test_tty_style_fill_writes_value_and_because_into_a_copy(self):
+        original = (ROOT / "koans" / "about_asserts.py").read_text(encoding="utf-8")
+        pristine = (ROOT / "koans" / "pristine" / "about_asserts.py").read_text(encoding="utf-8")
+        hint = "Say what kind of comparison the assertion performs."
+        method = "test_replace_the_blank_with_the_predicted_value"
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "about_asserts.py"
+            dest.write_text(original, encoding="utf-8")
+            blocked = Path(tmp) / "pristine" / "about_asserts.py"
+            blocked.parent.mkdir()
+            blocked.write_text(original, encoding="utf-8")
+
+            empty_out = io.StringIO()
+            empty = offer_fill(
+                dest,
+                method,
+                kind="unfilled",
+                failing_lineno=11,
+                hint=hint,
+                stdin=io.StringIO("\n"),
+                output=open_output(empty_out),
+            )
+            self.assertFalse(empty)
+            self.assertEqual(dest.read_text(encoding="utf-8"), original)
+            self.assertIn("not a crash", empty_out.getvalue())
+            self.assertIn("def test_replace_the_blank_with_the_predicted_value", empty_out.getvalue())
+
+            prompted = io.StringIO()
+            wrote = offer_fill(
+                dest,
+                method,
+                kind="unfilled",
+                failing_lineno=11,
+                hint=hint,
+                stdin=io.StringIO("3\nnames rebind\n"),
+                output=open_output(prompted),
+            )
+            text = prompted.getvalue()
+            filled = dest.read_text(encoding="utf-8")
+            self.assertTrue(wrote)
+            self.assertIn("about_asserts.py:", text)
+            self.assertIn("def test_replace_the_blank_with_the_predicted_value", text)
+            self.assertIn("self.assertEqual(1 + 1, __)", text)
+            self.assertIn("self.because(__)", text)
+            self.assertIn("This stop is the next koan, not a crash.", text)
+            self.assertIn(f"Hint: {hint}", text)
+            self.assertIn("Line 11: Python expression:", text)
+            self.assertIn("Line 12: One sentence naming the mechanism:", text)
+            self.assertNotIn("@expects", text)
+            self.assertNotIn('"value"', text)
+            self.assertIn("self.assertEqual(1 + 1, 3)", filled)
+            self.assertIn('self.because("names rebind")', filled)
+            self.assertIn('self.assertEqual("2" == 2, __)', filled)
+            self.assertNotIn("self.assertEqual(1 + 1, __)", filled)
+
+            again = io.StringIO()
+            lineno = next(
+                index + 1
+                for index, line in enumerate(filled.splitlines())
+                if "1 + 1, 3" in line
+            )
+            replaced = offer_fill(
+                dest,
+                method,
+                kind="prediction",
+                failing_lineno=lineno,
+                hint=hint,
+                stdin=io.StringIO("2\n"),
+                output=open_output(again),
+            )
+            corrected = dest.read_text(encoding="utf-8")
+            self.assertTrue(replaced)
+            self.assertIn("Line 11: Python expression:", again.getvalue())
+            self.assertNotIn("One sentence naming the mechanism:", again.getvalue())
+            self.assertIn("self.assertEqual(1 + 1, 2)", corrected)
+            self.assertIn('self.because("names rebind")', corrected)
+
+            with self.assertRaises(ValueError):
+                offer_fill(
+                    blocked,
+                    method,
+                    kind="unfilled",
+                    failing_lineno=11,
+                    hint=hint,
+                    stdin=io.StringIO("2\nnames rebind\n"),
+                    output=open_output(io.StringIO()),
+                )
+            self.assertEqual(blocked.read_text(encoding="utf-8"), original)
+
+        self.assertEqual((ROOT / "koans" / "about_asserts.py").read_text(encoding="utf-8"), original)
+        self.assertEqual(
+            (ROOT / "koans" / "pristine" / "about_asserts.py").read_text(encoding="utf-8"),
+            pristine,
+        )
 
 
 if __name__ == "__main__":
