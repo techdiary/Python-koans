@@ -1,0 +1,16 @@
+[project]
+name = "python-koans"
+version = "0.1.0"
+description = "A path of Python lessons about names, objects, protocols, and lookup."
+requires-python = ">=3.10"
+dependencies = ["cleo==2.1.0"]
+
+[project.scripts]
+python-koans = "koans.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["koans*"]
