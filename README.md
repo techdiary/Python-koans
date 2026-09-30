@@ -18,9 +18,13 @@ python-koans start
 
 If pip installs the command outside your `PATH`, run the path it prints, or `python -m koans start`.
 
-`start` continues the journey: it walks the lessons in order and stops at the first failure. The same walk is `python path_to_enlightenment.py` from this repository.
+`python-koans start` continues the journey: it walks the lessons in order and stops at the first failure. The same walk is `python path_to_enlightenment.py` from this repository.
 
-The tests are `unittest`. The report is drawn with Cleo: a loader while the lessons load, the current lesson, then the current koan, then the file and line, the assertion message, and how many koans passed. Color is on in a terminal and off when stdout is a pipe.
+`python-koans start --restart` puts you back at the first koan, including mid-journey. It overwrites the lesson files and `koans/student_work.py` from the pristine copies in `koans/pristine/`, prints `Journey reset.`, and starts the walk. Edit the lessons under `koans/`, not the files in `koans/pristine/`. The flag is the confirmation. Without `--restart`, `start` does not touch your edits.
+
+`python-koans list` prints every topic in path order, one row each. A tick means that lesson is finished. A cross means it is not. A lesson is finished when no fill-in `__` remains (`__eq__` and similar names are not blanks). `about_transfer` also needs `koans/student_work.py` implemented: `NotImplementedError` or a body that is only `pass` is not finished.
+
+The report is drawn with Cleo: a loader while the lessons load, the current lesson, then the current koan, then the file and line, the assertion message, and how many koans passed. Color is on in a terminal and off when stdout is a pipe.
 
 There is no answer key.
 

@@ -6,11 +6,20 @@ import io
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
+from koans.catalog import KOAN_MODULES
 from koans.engine import Koan, blank, expects
-from koans.runner import run_suite, suite_from_classes
+from koans.progress import (
+    has_unfilled_blank,
+    lesson_rows,
+    restart_journey,
+    student_work_is_implemented,
+    write_lesson_list,
+)
+from koans.runner import open_output, run_suite, suite_from_classes
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -164,6 +173,126 @@ class HarnessTests(unittest.TestCase):
         self.assertRegex(completed.stdout, r"Passed 0 of \d+\.")
         self.assertNotIn("about_objects.py", completed.stdout)
         self.assertNotIn("\x1b", completed.stdout)
+
+    def test_restart_restores_a_filled_blank_and_starts_at_the_first_koan(self):
+        path = ROOT / "koans" / "about_asserts.py"
+        original = path.read_text(encoding="utf-8")
+        filled = original.replace(
+            "self.assertEqual(1 + 1, __)",
+            "self.assertEqual(1 + 1, 2)",
+            1,
+        )
+        self.assertNotEqual(filled, original)
+        path.write_text(filled, encoding="utf-8")
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-m", "koans", "start", "--restart"],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            restored = path.read_text(encoding="utf-8")
+            self.assertIn("self.assertEqual(1 + 1, __)", restored)
+            self.assertNotIn("self.assertEqual(1 + 1, 2)", restored)
+            self.assertEqual(restored, original)
+            stdout = completed.stdout
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertLess(stdout.index("Journey reset."), stdout.index("fill in the blank"))
+            self.assertIn("koans/about_asserts.py:", stdout)
+            self.assertRegex(stdout, r"Passed 0 of \d+\.")
+            self.assertNotIn("about_objects.py", stdout)
+            self.assertNotIn("\x1b", stdout)
+            self.assertEqual(completed.stderr, "")
+        finally:
+            path.write_text(original, encoding="utf-8")
+
+    def test_restart_copies_pristine_lessons_in_a_scratch_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pristine = root / "pristine"
+            pristine.mkdir()
+            lesson = "self.assertEqual(1 + 1, __)\n__ = blank\n"
+            (pristine / "about_asserts.py").write_text(lesson, encoding="utf-8")
+            (root / "about_asserts.py").write_text(
+                "self.assertEqual(1 + 1, 2)\n__ = blank\n",
+                encoding="utf-8",
+            )
+            for name in KOAN_MODULES:
+                stem = name.rsplit(".", 1)[-1]
+                target = pristine / f"{stem}.py"
+                if not target.exists():
+                    target.write_text(lesson, encoding="utf-8")
+                if not (root / f"{stem}.py").exists():
+                    (root / f"{stem}.py").write_text("self.assertEqual(1, __)\n", encoding="utf-8")
+            (pristine / "student_work.py").write_text("raise NotImplementedError\n", encoding="utf-8")
+            (root / "student_work.py").write_text("def add(self, track):\n    return track\n", encoding="utf-8")
+            restart_journey(root)
+            self.assertEqual(
+                (root / "about_asserts.py").read_text(encoding="utf-8"),
+                lesson,
+            )
+            self.assertEqual(
+                (root / "student_work.py").read_text(encoding="utf-8"),
+                "raise NotImplementedError\n",
+            )
+
+    def test_list_marks_a_tick_and_a_cross(self):
+        self.assertTrue(has_unfilled_blank("self.because(__)\n__ = blank\n"))
+        self.assertFalse(has_unfilled_blank("__ = blank\nself.assertEqual(item.__dict__, {})\n"))
+        self.assertFalse(student_work_is_implemented("def add(self, track):\n    pass\n"))
+        self.assertFalse(
+            student_work_is_implemented("def add(self, track):\n    raise NotImplementedError\n")
+        )
+        self.assertTrue(
+            student_work_is_implemented("def add(self, track):\n    self.tracks.append(track)\n")
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "about_asserts.py").write_text(
+                "__ = blank\nself.assertEqual(1, 1)\n",
+                encoding="utf-8",
+            )
+            for name in KOAN_MODULES:
+                stem = name.rsplit(".", 1)[-1]
+                path = root / f"{stem}.py"
+                if path.exists():
+                    continue
+                path.write_text("self.because(__)\n__ = blank\n", encoding="utf-8")
+            (root / "student_work.py").write_text(
+                "def add(self, track):\n    raise NotImplementedError\n",
+                encoding="utf-8",
+            )
+            rows = dict(lesson_rows(root))
+            self.assertTrue(rows["about_asserts"])
+            self.assertFalse(rows["about_objects"])
+            self.assertFalse(rows["about_transfer"])
+
+        stream = io.StringIO()
+        write_lesson_list(
+            open_output(stream),
+            [("about_asserts", True), ("about_objects", False)],
+        )
+        text = stream.getvalue()
+        self.assertIn("✓ about_asserts", text)
+        self.assertIn("✗ about_objects", text)
+        self.assertNotIn("\x1b", text)
+
+        completed = subprocess.run(
+            [sys.executable, "-m", "koans", "list"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0)
+        self.assertNotIn("\x1b", completed.stdout)
+        self.assertEqual(completed.stderr, "")
+        for name in KOAN_MODULES:
+            stem = name.rsplit(".", 1)[-1]
+            self.assertIn(f"✗ {stem}", completed.stdout)
+        self.assertNotIn("✓", completed.stdout)
 
 
 if __name__ == "__main__":
